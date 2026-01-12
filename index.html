@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Critical Cargo: Precision Mode</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap');
+        
+        :root {
+            --primary: #0ea5e9;   /* Cyan-500 */
+            --warning: #eab308;   /* Yellow-500 */
+            --danger: #ef4444;    /* Red-500 */
+            --bg-dark: #0f172a;   /* Slate-900 */
+        }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background-color: #050505;
+            color: #e2e8f0;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+
+        /* 背景網格 */
+        .grid-bg {
+            background-image: 
+                linear-gradient(rgba(14, 165, 233, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(14, 165, 233, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            opacity: 0.3;
+        }
+
+        /* 暈影效果 */
+        .vignette {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, transparent 40%, #000 100%);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* 液體核心效果 (半徑 30px) */
+        .core-liquid {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8), var(--primary));
+            box-shadow: 0 0 20px var(--primary), inset 0 0 10px rgba(255,255,255,0.5);
+            transition: transform 0.05s linear, background-color 0.2s; /* 更靈敏的反應 */
+            filter: blur(0.5px);
+            position: absolute;
+            z-index: 20;
+            /* 讓球體看起來有點黏性 */
+            will-change: transform;
+        }
+        
+        .core-liquid::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.3);
+            animation: pulse-ring 2s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 0.5; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+
+        /* HUD 旋轉動畫 */
+        .spin-slow {
+            animation: spin 10s linear infinite;
+        }
+        .spin-reverse {
+            animation: spin 15s linear infinite reverse;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* 警示閃爍 */
+        .hazard-flash {
+            animation: hazard-alarm 0.5s infinite;
+        }
+
+        @keyframes hazard-alarm {
+            0%, 100% { box-shadow: inset 0 0 0 0 transparent; border-color: var(--danger); }
+            50% { box-shadow: inset 0 0 50px var(--danger); border-color: transparent; }
+        }
+
+        /* 狀態文字 */
+        .hud-text {
+            font-family: 'Rajdhani', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* 工業條紋裝飾 */
+        .hazard-stripe {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(0,0,0,0.5),
+                rgba(0,0,0,0.5) 10px,
+                rgba(234, 179, 8, 0.2) 10px,
+                rgba(234, 179, 8, 0.2) 20px
+            );
+        }
+    </style>
+</head>
+<body class="h-screen w-screen relative flex flex-col items-center justify-center">
+
+    <!-- 背景層 -->
+    <div class="grid-bg"></div>
+    <div class="vignette"></div>
+
+    <!-- UI: 頂部資訊欄 -->
+    <div class="absolute top-0 w-full p-6 flex justify-between items-start z-30 pointer-events-none">
+        <div class="flex flex-col">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-cyan-500 animate-pulse"></div>
+                <span class="text-cyan-500 text-xs font-bold tracking-widest">GYRO_STABILIZER_V9</span>
+            </div>
+            <div class="mt-1">
+                <span class="text-[10px] text-slate-500 block">PRECISION</span>
+                <span id="angle-display" class="text-3xl font-mono text-white font-bold">STABLE</span>
+            </div>
+        </div>
+        <div class="text-right">
+            <span class="text-[10px] text-slate-500 block">MISSION STATUS</span>
+            <span id="phase-text" class="text-2xl font-bold text-yellow-500 hud-text">TRANSIT</span>
+        </div>
+    </div>
+
+    <!-- UI: 中央 HUD 儀表 -->
+    <div class="relative w-[340px] h-[340px] flex items-center justify-center z-20">
+        
+        <!-- SVG 儀表盤 -->
+        <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 400">
+            <!-- 定義漸層 -->
+            <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:rgba(14, 165, 233, 0);stop-opacity:1" />
+                    <stop offset="50%" style="stop-color:rgba(14, 165, 233, 0.5);stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:rgba(14, 165, 233, 0);stop-opacity:1" />
+                </linearGradient>
+            </defs>
+
+            <!-- 外圈裝飾環 (旋轉) -->
+            <g class="spin-slow origin-center">
+                <circle cx="200" cy="200" r="190" stroke="rgba(14, 165, 233, 0.2)" stroke-width="1" stroke-dasharray="10 20" fill="none" />
+                <path d="M 200 10 L 200 30 M 200 370 L 200 390 M 10 200 L 30 200 M 370 200 L 390 200" stroke="#0ea5e9" stroke-width="2" />
+            </g>
+
+            <!-- 內圈裝飾環 (反向旋轉) -->
+            <g class="spin-reverse origin-center">
+                <circle cx="200" cy="200" r="160" stroke="rgba(14, 165, 233, 0.1)" stroke-width="20" stroke-dasharray="2 10" fill="none" />
+            </g>
+
+            <!-- 安全區邊界文字 -->
+            <!-- 視覺框半徑是 70px (對應 danger-ring)，SVG內 200,200 為中心 -->
+            <text x="200" y="115" fill="rgba(34, 197, 94, 0.5)" font-size="10" text-anchor="middle">BOUNDARY LIMIT</text>
+
+            <!-- 十字準心 -->
+            <line x1="180" y1="200" x2="220" y2="200" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+            <line x1="200" y1="180" x2="200" y2="220" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+            <circle cx="200" cy="200" r="2" fill="white" />
+        </svg>
+
+        <!-- 危險邊界環 (實際判定框) -->
+        <!-- w-140px = 半徑 70px -->
+        <div id="danger-ring" class="absolute w-[140px] h-[140px] rounded-full border-2 border-dashed border-slate-700 transition-all duration-300"></div>
+
+        <!-- 液體核心 (移動主體) -->
+        <div id="core-container" class="absolute w-full h-full flex items-center justify-center pointer-events-none">
+            <div id="liquid" class="core-liquid"></div>
+        </div>
+    </div>
+
+    <!-- 底部資訊與進度 -->
+    <div class="absolute bottom-0 w-full p-6 z-30">
+        <!-- 進度條 -->
+        <div class="w-full h-12 bg-slate-900/80 border border-slate-700 relative overflow-hidden flex items-center px-4 rounded-sm">
+            <div class="absolute inset-0 hazard-stripe opacity-10"></div>
+            
+            <div class="relative z-10 flex justify-between w-full text-xs font-bold tracking-widest text-slate-400">
+                <span>START</span>
+                <span id="progress-text">0%</span>
+                <span>SECURE</span>
+            </div>
+            
+            <!-- 進度填充 -->
+            <div id="progress-bar" class="absolute left-0 top-0 bottom-0 bg-yellow-600/60 w-0 transition-all duration-100 ease-linear shadow-[0_0_20px_rgba(234,179,8,0.4)] border-r-2 border-yellow-400"></div>
+        </div>
+
+        <!-- 滑鼠提示 -->
+        <div id="mouse-hint" class="hidden text-center mt-2 text-[10px] text-slate-600 font-mono">
+            [DEV MODE] 滑鼠模擬模式
+        </div>
+    </div>
+
+    <!-- 開始畫面 Overlay -->
+    <div id="start-screen" class="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-8 backdrop-blur-md">
+        <div class="border border-slate-700 bg-slate-900/50 p-8 max-w-md w-full relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-cyan-500"></div>
+            <div class="absolute bottom-0 right-0 w-full h-1 bg-cyan-500"></div>
+            
+            <h1 class="text-4xl font-bold text-white mb-2 hud-text tracking-tighter">CRITICAL<br><span class="text-cyan-500">CARGO</span></h1>
+            <div class="h-px w-full bg-slate-700 my-4"></div>
+            
+            <div class="space-y-4 text-sm text-slate-400 font-mono mb-8">
+                <div class="flex items-start gap-3">
+                    <span class="text-red-500">⚠</span>
+                    <p class="text-slate-300">警告：碰撞判定嚴格。</p>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-cyan-500">01.</span>
+                    <p>球體核心 <span class="text-red-500">任何部分</span> 接觸虛線框即判定任務失敗。</p>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="text-cyan-500">02.</span>
+                    <p>移動至安全區 (維持穩定 15 秒)。</p>
+                </div>
+            </div>
+
+            <div class="grid gap-3">
+                <button id="btn-mobile" class="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 group border border-cyan-400">
+                    <span class="group-hover:translate-x-1 transition-transform">手機版 (陀螺儀)</span>
+                </button>
+                <button id="btn-desktop" class="w-full py-3 bg-transparent border border-slate-600 text-slate-500 hover:text-slate-300 hover:border-slate-400 text-xs font-mono uppercase transition-all">
+                    // 電腦版 (滑鼠模擬)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 失敗畫面 -->
+    <div id="fail-overlay" class="hidden absolute inset-0 z-50 bg-red-900/90 flex flex-col items-center justify-center animate-pulse">
+        <div class="border-4 border-black p-8 bg-red-600 text-black text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] transform rotate-2">
+            <h2 class="text-6xl font-black mb-2 tracking-tighter">FATAL<br>ERROR</h2>
+            <div class="text-xl font-bold border-t-2 border-black pt-2 mt-2">BREACH DETECTED</div>
+        </div>
+        <p class="mt-8 text-white font-mono text-sm bg-black/50 px-4 py-2 rounded">物體接觸邊界</p>
+        <button onclick="resetGame()" class="mt-4 px-8 py-3 bg-black text-white font-mono hover:bg-gray-900 border border-red-500">
+            SYSTEM_RESET();
+        </button>
+    </div>
+
+    <!-- 成功畫面 -->
+    <div id="success-screen" class="hidden absolute inset-0 z-50 bg-green-900 flex flex-col items-center justify-center text-center p-8">
+        <div class="w-40 h-40 border-4 border-white/20 rounded-full flex items-center justify-center relative mb-8">
+            <div class="absolute inset-0 border-4 border-white rounded-full animate-ping opacity-20"></div>
+            <div class="text-6xl text-white">✓</div>
+        </div>
+        <h2 class="text-4xl font-bold text-white hud-text mb-2">MISSION ACCOMPLISHED</h2>
+        <p class="text-green-300 font-mono text-sm tracking-widest">PAYLOAD SECURED</p>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        // 幾何參數設定 (Pixels)
+        const FRAME_RADIUS = 70; // 邊框半徑 (w-140px / 2)
+        const BALL_RADIUS = 30;  // 球體半徑 (w-60px / 2)
+        const MAX_SAFE_DIST = FRAME_RADIUS - BALL_RADIUS; // 圓心最大允許位移量 (40px)
+        
+        const PX_PER_DEG = 4.4; // 視覺靈敏度：每度傾斜移動的像素量
+        const TRANSPORT_DURATION = 15000;
+        
+        // --- STATE ---
+        let state = {
+            phase: 'IDLE',
+            progress: 0,
+            beta: 0, 
+            gamma: 0, 
+            isMouse: false
+        };
+
+        let lastFrame = 0;
+        let audioCtx;
+        
+        // Desktop Mode Variables
+        let initialMouseX = 0;
+        let initialMouseY = 0;
+
+        // --- DOM Elements ---
+        const ui = {
+            start: document.getElementById('start-screen'),
+            fail: document.getElementById('fail-overlay'),
+            success: document.getElementById('success-screen'),
+            liquid: document.getElementById('liquid'),
+            angleText: document.getElementById('angle-display'),
+            phaseText: document.getElementById('phase-text'),
+            progressBar: document.getElementById('progress-bar'),
+            progressLabel: document.getElementById('progress-text'),
+            dangerRing: document.getElementById('danger-ring'),
+            mouseHint: document.getElementById('mouse-hint')
+        };
+
+        // --- AUDIO ---
+        const initAudio = () => { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); };
+        const playTone = (freq, type='sine', dur=0.1) => {
+            if(!audioCtx) return;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = type;
+            o.frequency.value = freq;
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start();
+            g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+            o.stop(audioCtx.currentTime + dur);
+        };
+
+        // --- CORE LOGIC ---
+        function update(timestamp) {
+            if (state.phase === 'FAILED' || state.phase === 'SUCCESS' || state.phase === 'IDLE') return;
+
+            const dt = timestamp - lastFrame;
+            lastFrame = timestamp;
+
+            // 1. Calculate Visual Position (Pixels)
+            let visX = state.gamma * PX_PER_DEG; 
+            let visY = state.beta * PX_PER_DEG;
+
+            // Calculate distance from center (pixels)
+            const distFromCenter = Math.sqrt(visX*visX + visY*visY);
+
+            // 2. Logic: Check Physical Collision
+            // Failure logic: If ball edge touches frame edge
+            // Condition: CenterDistance + BallRadius > FrameRadius
+            const isTouchingEdge = (distFromCenter + BALL_RADIUS) >= FRAME_RADIUS;
+            
+            // Visual Update
+            ui.liquid.style.transform = `translate(${visX}px, ${visY}px)`;
+            
+            // Update HUD Data
+            ui.angleText.innerText = isTouchingEdge ? "CRITICAL" : "STABLE";
+
+            // Visual Feedback (Danger Ring Color)
+            // Determine how close we are to failure (0 to 1)
+            const dangerRatio = Math.min(distFromCenter / MAX_SAFE_DIST, 1.2);
+            
+            let ringColor = '#3b82f6'; // Safe (Cyan)
+            if (dangerRatio > 0.7) ringColor = '#eab308'; // Warn (Yellow)
+            if (dangerRatio >= 0.95) ringColor = '#ef4444'; // Danger (Red)
+            
+            ui.dangerRing.style.borderColor = ringColor;
+            // Pulse slightly based on danger
+            ui.dangerRing.style.transform = `scale(${1 + (dangerRatio * 0.05)})`; 
+            ui.dangerRing.style.opacity = 0.3 + (dangerRatio * 0.7);
+
+            // Liquid Color
+            if (dangerRatio >= 0.95) {
+                ui.liquid.style.setProperty('--primary', '#ef4444');
+                ui.liquid.style.boxShadow = '0 0 30px #ef4444, inset 0 0 10px rgba(255,255,255,0.8)';
+            } else if (dangerRatio > 0.7) {
+                ui.liquid.style.setProperty('--primary', '#eab308');
+            } else {
+                ui.liquid.style.setProperty('--primary', '#0ea5e9');
+            }
+
+            if (state.phase === 'TRANSPORT') {
+                processTransport(isTouchingEdge, dt);
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        function processTransport(failed, dt) {
+            // Failure check
+            if (failed) {
+                failGame();
+                return;
+            }
+
+            // Progress
+            state.progress += dt;
+            const pct = Math.min((state.progress / TRANSPORT_DURATION) * 100, 100);
+            
+            ui.progressBar.style.width = `${pct}%`;
+            ui.progressLabel.innerText = `${pct.toFixed(0)}%`;
+
+            if (state.progress >= TRANSPORT_DURATION) {
+                winGame(); 
+            }
+        }
+
+        function failGame() {
+            state.phase = 'FAILED';
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+            playTone(150, 'sawtooth', 0.8);
+            ui.fail.classList.remove('hidden');
+        }
+
+        function winGame() {
+            state.phase = 'SUCCESS';
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            playTone(1200, 'sine', 0.5);
+            ui.success.classList.remove('hidden');
+        }
+
+        window.resetGame = () => {
+            state.phase = 'IDLE';
+            state.progress = 0;
+            state.beta = 0;
+            state.gamma = 0;
+            
+            ui.fail.classList.add('hidden');
+            ui.success.classList.add('hidden');
+            ui.progressBar.style.width = '0%';
+            ui.phaseText.classList.remove('text-red-500', 'animate-pulse');
+            ui.phaseText.innerText = "TRANSIT";
+            
+            ui.start.classList.remove('hidden');
+        }
+
+        // --- INPUT ---
+        function handleOrient(e) {
+            if (state.isMouse) return;
+            state.beta = Math.max(-90, Math.min(90, e.beta || 0));
+            state.gamma = Math.max(-90, Math.min(90, e.gamma || 0));
+        }
+
+        function startGame() {
+            ui.start.classList.add('hidden');
+            state.phase = 'TRANSPORT';
+            lastFrame = performance.now();
+            requestAnimationFrame(update);
+        }
+
+        // --- BUTTONS ---
+        document.getElementById('btn-mobile').addEventListener('click', async () => {
+            initAudio();
+            state.isMouse = false;
+            ui.mouseHint.classList.add('hidden');
+            
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const r = await DeviceOrientationEvent.requestPermission();
+                    if(r==='granted') {
+                        window.addEventListener('deviceorientation', handleOrient);
+                        startGame();
+                    } else alert("需要權限");
+                } catch(e) {
+                    window.addEventListener('deviceorientation', handleOrient);
+                    startGame();
+                }
+            } else {
+                window.addEventListener('deviceorientation', handleOrient);
+                startGame();
+            }
+        });
+
+        document.getElementById('btn-desktop').addEventListener('click', (e) => {
+            initAudio();
+            state.isMouse = true;
+            
+            // Recalibrate Mouse Center
+            initialMouseX = e.clientX;
+            initialMouseY = e.clientY;
+            
+            // Reset
+            state.beta = 0;
+            state.gamma = 0;
+
+            ui.mouseHint.classList.remove('hidden');
+            ui.mouseHint.innerText = `[DEV MODE] 已校準中心，請勿大幅移動`;
+            
+            document.addEventListener('mousemove', moveEvent => {
+                if (!state.isMouse) return;
+                
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                
+                const deltaX = moveEvent.clientX - initialMouseX;
+                const deltaY = moveEvent.clientY - initialMouseY;
+                
+                // Sensitivity
+                state.gamma = (deltaX / w) * 90;
+                state.beta = (deltaY / h) * 90;
+            });
+            startGame();
+        });
+    </script>
+</body>
+</html>
