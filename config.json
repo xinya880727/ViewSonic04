@@ -1,0 +1,26 @@
+{
+  "assets": {
+    "ghostImage": "https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/pinball.png",
+    "//_comment": "下方 markerPreset 若改為 'pattern'，則會讀取 markerPatternUrl 的檔案",
+    "markerPreset": "pattern",
+    "markerPatternUrl": "01.patt"
+  },
+  "display": {
+    "width": 1.5,
+    "height": 1.5,
+    "bloodColor": "#880000"
+  },
+  "ui": {
+    "title": "靈異偵測模式",
+    "scanningText": "請將鏡頭對準牆上的<br><span class='text-white font-bold'>識別圖</span>",
+    "foundText": "警告：偵測到異常靈波！",
+    "lostText": "訊號中斷..."
+  },
+  "effects": {
+    "fadeInSpeed": 0.05,
+    "maxOpacity": 0.9,
+    "jitterAmount": 0.1,
+    "bloodIntensity": 0.4,
+    "glitchFrequency": 0.7
+  }
+}
